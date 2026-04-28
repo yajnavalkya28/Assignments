@@ -1,0 +1,1477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Smart Water Tank System</title>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+<style>
+:root {
+  --bg: #060a14;
+  --panel: #0d1526;
+  --border: #1a2d4a;
+  --cyan: #00d4ff;
+  --green: #00ff88;
+  --orange: #ff6b35;
+  --red: #ff3355;
+  --yellow: #ffd700;
+  --text: #c8d8e8;
+  --dim: #3a5470;
+  --water-dark: #0055aa;
+  --water-mid: #0077cc;
+  --water-light: #00aaff;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── HEADER ── */
+.header {
+  background: linear-gradient(90deg,#060a14,#0d1a2e,#060a14);
+  border-bottom: 1px solid var(--cyan);
+  padding: 10px 24px;
+  display: flex; align-items: center; justify-content: space-between;
+  box-shadow: 0 0 30px rgba(0,212,255,0.15);
+  position: sticky; top:0; z-index:100;
+}
+.header h1 {
+  font-family:'Orbitron',monospace;
+  font-size:1.2rem; color:var(--cyan);
+  text-shadow:0 0 20px rgba(0,212,255,0.6);
+  letter-spacing:3px;
+}
+.header-right { display:flex; gap:16px; align-items:center; font-size:0.72rem; color:var(--dim); }
+.live-dot {
+  width:8px;height:8px;border-radius:50%;
+  background:var(--green);box-shadow:0 0 8px var(--green);
+  animation:blink 1.5s infinite;
+}
+@keyframes blink { 0%,100%{opacity:1}50%{opacity:0.2} }
+
+/* ── MAIN GRID ── */
+.main {
+  display: grid;
+  grid-template-columns: 44% 56%;
+  height: calc(100vh - 50px);
+}
+
+/* ── PANELS ── */
+.panel {
+  padding:14px;
+  overflow-y:auto;
+  scrollbar-width:thin;
+  scrollbar-color: var(--border) transparent;
+}
+.left-panel { border-right:1px solid var(--border); overflow-y:auto; overflow-x:hidden; }
+.right-panel {
+  display:flex; flex-direction:column; gap:12px;
+}
+.panel-label {
+  font-family:'Orbitron',monospace;
+  font-size:0.62rem; letter-spacing:3px;
+  color:var(--dim); text-transform:uppercase;
+  margin-bottom:10px; padding-bottom:6px;
+  border-bottom:1px solid var(--border);
+}
+
+/* ── CIRCUIT SVG ── */
+#circuit-svg {
+  width:100%; height:auto;
+  filter: drop-shadow(0 0 6px rgba(0,212,255,0.2));
+}
+
+/* ── TOP ROW (tank + info) ── */
+.top-row {
+  display:flex; gap:14px; align-items:flex-start;
+}
+
+/* ── TANK WRAPPER ── */
+.tank-wrapper {
+  display:flex; flex-direction:column; align-items:center; gap:4px;
+  flex-shrink:0;
+}
+.sensor-label {
+  font-size:0.6rem; color:var(--cyan); letter-spacing:2px;
+  text-transform:uppercase;
+}
+/* Ultrasonic sensor on top */
+.ultrasonic-top {
+  width:70px; height:22px;
+  background:#1a2d4a; border:1px solid var(--cyan);
+  border-radius:4px; display:flex; align-items:center;
+  justify-content:center; font-size:0.55rem; color:var(--cyan);
+  position:relative;
+}
+.ultrasonic-top::after {
+  content:'';
+  position:absolute; bottom:-6px; left:50%; transform:translateX(-50%);
+  width:2px; height:6px; background:var(--cyan);
+}
+.sensor-beam {
+  width:50px; height:4px;
+  background:linear-gradient(90deg, transparent, rgba(0,212,255,0.6), transparent);
+  animation: beam-pulse 1s infinite;
+  border-radius:2px;
+}
+@keyframes beam-pulse { 0%,100%{opacity:0.3}50%{opacity:1} }
+
+/* Tank body */
+.tank-outer {
+  width:120px; height:280px;
+  border:2px solid #2a4a6a;
+  border-top:none;
+  border-radius:0 0 8px 8px;
+  position:relative;
+  background:#08111e;
+  overflow:hidden;
+  box-shadow: inset 0 0 20px rgba(0,0,0,0.5), 0 0 15px rgba(0,212,255,0.1);
+}
+.tank-cap {
+  width:124px; height:10px;
+  background:#1a2d4a; border:2px solid #2a4a6a;
+  border-radius:4px 4px 0 0; margin-left:-2px;
+  display:flex; align-items:center; justify-content:center;
+}
+/* Water fill */
+.water-fill {
+  position:absolute; bottom:0; left:0; right:0;
+  transition: height 0.3s ease;
+  overflow:hidden;
+}
+.water-body {
+  position:absolute; bottom:0; left:0; right:0; top:20px;
+  background: linear-gradient(180deg, var(--water-mid) 0%, var(--water-dark) 100%);
+}
+/* Wave */
+.wave-container {
+  position:absolute; top:0; left:0; right:0; height:20px; overflow:hidden;
+}
+.wave {
+  position:absolute; top:0;
+  width:200%; height:20px;
+  background-repeat:repeat-x;
+  animation:wave-move 2s linear infinite;
+}
+.wave1 {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 20'%3E%3Cpath d='M0,10 C30,0 70,20 100,10 C130,0 170,20 200,10 L200,20 L0,20 Z' fill='%230077cc'/%3E%3C/svg%3E");
+  background-size:200px 20px;
+}
+.wave2 {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 20'%3E%3Cpath d='M0,10 C30,20 70,0 100,10 C130,20 170,0 200,10 L200,20 L0,20 Z' fill='%230055aa'/%3E%3C/svg%3E");
+  background-size:200px 20px;
+  animation:wave-move 3s linear infinite reverse;
+  opacity:0.7;
+}
+@keyframes wave-move { 0%{transform:translateX(0)}100%{transform:translateX(-50%)} }
+
+/* Tank level markers */
+.tank-markers {
+  position:absolute; right:-22px; top:0; bottom:0;
+  display:flex; flex-direction:column; justify-content:space-between;
+  font-size:0.5rem; color:var(--dim);
+}
+/* Level percentage overlay */
+.level-text {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-family:'Orbitron',monospace; font-size:1rem;
+  font-weight:700; color:#fff;
+  text-shadow:0 0 10px rgba(0,0,0,0.8);
+  pointer-events:none; z-index:5;
+}
+/* Motor inlet pipe */
+.motor-pipe {
+  position:absolute; top:10px; left:-14px;
+  width:14px; height:8px;
+  background:#1a2d4a; border:1px solid var(--cyan);
+  border-right:none;
+}
+.water-flow-in {
+  display:none;
+  position:absolute; top:14px; left:-12px;
+  width:4px; height:6px;
+  background:var(--water-light);
+  animation:flow-in 0.3s linear infinite;
+  border-radius:0 0 2px 2px;
+}
+@keyframes flow-in { 0%{transform:scaleY(0);opacity:1}100%{transform:scaleY(1);opacity:0.5} }
+
+/* Valve at bottom */
+.valve-section {
+  display:flex; flex-direction:column; align-items:center;
+}
+.valve-pipe-top {
+  width:6px; height:10px; background:#1a2d4a; border:1px solid #2a4a6a; border-top:none;
+  margin:0 auto;
+}
+.valve-body {
+  width:36px; height:20px;
+  background:#1a2d4a; border:2px solid var(--dim);
+  border-radius:4px; display:flex; align-items:center;
+  justify-content:center; cursor:pointer;
+  transition:all 0.3s; font-size:0.55rem;
+  user-select:none;
+}
+.valve-body:hover { border-color:var(--orange); }
+.valve-body.open { border-color:var(--orange); background:#2a1a00; box-shadow:0 0 8px rgba(255,107,53,0.4); }
+.valve-pipe-bottom {
+  width:6px; height:16px; background:#1a2d4a; border:1px solid #2a4a6a; border-top:none;
+  margin:0 auto;
+}
+.drain-drop {
+  display:none;
+  width:6px; height:8px;
+  background:var(--water-light);
+  border-radius:0 0 3px 3px;
+  animation:drip 0.5s ease-in infinite;
+}
+@keyframes drip { 0%{transform:scaleY(0);opacity:1}100%{transform:translateY(8px) scaleY(1);opacity:0} }
+
+/* ── INFO CARDS ── */
+.info-col { flex:1; display:flex; flex-direction:column; gap:8px; }
+.info-card {
+  background:var(--panel); border:1px solid var(--border);
+  border-radius:6px; padding:10px 12px;
+}
+.info-card-title {
+  font-size:0.58rem; color:var(--dim); letter-spacing:2px;
+  text-transform:uppercase; margin-bottom:6px;
+}
+.info-value {
+  font-family:'Orbitron',monospace; font-size:1.3rem;
+  font-weight:700; color:var(--cyan);
+}
+.info-unit { font-size:0.65rem; color:var(--dim); margin-left:4px; }
+
+/* ML Threshold card */
+.ml-card {
+  background: linear-gradient(135deg, #0d1a2e, #0a1428);
+  border:1px solid var(--cyan);
+  box-shadow:0 0 12px rgba(0,212,255,0.1);
+}
+.ml-badge {
+  display:inline-block; font-size:0.5rem; letter-spacing:2px;
+  background:rgba(0,212,255,0.1); color:var(--cyan);
+  border:1px solid var(--cyan); border-radius:3px;
+  padding:1px 6px; margin-bottom:6px;
+}
+.ml-value {
+  font-family:'Orbitron',monospace; font-size:1.6rem;
+  font-weight:900; color:var(--cyan);
+  text-shadow:0 0 15px rgba(0,212,255,0.5);
+}
+.ml-rate-bar {
+  margin-top:8px; height:4px; background:var(--border);
+  border-radius:2px; overflow:hidden;
+}
+.ml-rate-fill {
+  height:100%; background:linear-gradient(90deg,var(--green),var(--cyan));
+  transition:width 0.5s ease; border-radius:2px;
+}
+.ml-status { font-size:0.6rem; color:var(--dim); margin-top:4px; }
+
+/* ── LCD ── */
+.lcd-display {
+  background:#001a00; border:2px solid #003300;
+  border-radius:6px; padding:10px 14px;
+  font-family:'Share Tech Mono',monospace;
+  box-shadow: inset 0 0 15px rgba(0,255,0,0.05), 0 0 10px rgba(0,255,0,0.1);
+}
+.lcd-label {
+  font-size:0.58rem; color:#005500; letter-spacing:2px;
+  margin-bottom:6px; text-transform:uppercase;
+}
+.lcd-line {
+  font-size:0.85rem; color:#00cc00;
+  text-shadow:0 0 8px rgba(0,200,0,0.6);
+  height:1.3em; letter-spacing:1px;
+  white-space:pre;
+}
+
+/* ── CONTROLS ── */
+.controls-row {
+  display:flex; gap:10px; flex-wrap:wrap;
+}
+.ctrl-group {
+  background:var(--panel); border:1px solid var(--border);
+  border-radius:6px; padding:10px 12px; flex:1; min-width:120px;
+}
+.ctrl-label {
+  font-size:0.58rem; color:var(--dim); letter-spacing:2px;
+  text-transform:uppercase; margin-bottom:8px;
+}
+
+/* Toggle Switch */
+.toggle-wrap { display:flex; align-items:center; gap:8px; }
+.toggle-switch {
+  position:relative; width:50px; height:24px; cursor:pointer;
+}
+.toggle-switch input { opacity:0; width:0; height:0; }
+.toggle-slider {
+  position:absolute; inset:0;
+  background:#1a2d4a; border:1px solid var(--border);
+  border-radius:24px; transition:0.3s;
+}
+.toggle-slider::before {
+  content:''; position:absolute;
+  height:18px; width:18px; left:2px; bottom:2px;
+  background:var(--dim); border-radius:50%; transition:0.3s;
+}
+input:checked + .toggle-slider { background:rgba(0,212,255,0.2); border-color:var(--cyan); }
+input:checked + .toggle-slider::before { transform:translateX(26px); background:var(--cyan); }
+.toggle-text { font-size:0.75rem; min-width:55px; }
+.toggle-text.auto { color:var(--cyan); }
+.toggle-text.manual { color:var(--yellow); }
+
+/* Buttons */
+.btn {
+  padding:8px 16px; border:1px solid var(--border);
+  border-radius:5px; background:var(--panel);
+  color:var(--text); font-family:'Share Tech Mono',monospace;
+  font-size:0.75rem; cursor:pointer; transition:all 0.2s;
+  letter-spacing:1px; text-transform:uppercase;
+}
+.btn:hover { border-color:var(--cyan); color:var(--cyan); }
+.btn.active { background:rgba(0,212,255,0.15); border-color:var(--cyan); color:var(--cyan); box-shadow:0 0 10px rgba(0,212,255,0.2); }
+.btn.danger { border-color:var(--orange); color:var(--orange); }
+.btn.danger.active { background:rgba(255,107,53,0.15); box-shadow:0 0 10px rgba(255,107,53,0.3); }
+.btn:disabled { opacity:0.3; cursor:not-allowed; }
+
+/* Buzzer indicator */
+.buzzer-wrap { display:flex; align-items:center; gap:8px; }
+.buzzer-icon {
+  width:28px; height:28px; border-radius:50%;
+  background:#1a2d4a; border:2px solid var(--border);
+  display:flex; align-items:center; justify-content:center;
+  font-size:0.9rem; transition:all 0.3s;
+}
+.buzzer-icon.active {
+  background:rgba(255,51,85,0.2);
+  border-color:var(--red);
+  box-shadow:0 0 15px rgba(255,51,85,0.6);
+  animation:buzz-shake 0.2s infinite;
+}
+@keyframes buzz-shake {
+  0%,100%{transform:translateX(0)}
+  25%{transform:translateX(-2px)}
+  75%{transform:translateX(2px)}
+}
+.buzzer-text { font-size:0.7rem; }
+
+/* Motor indicator */
+.motor-indicator {
+  display:flex; align-items:center; gap:6px; font-size:0.7rem;
+}
+.motor-dot {
+  width:10px; height:10px; border-radius:50%;
+  background:var(--dim); transition:all 0.3s;
+}
+.motor-dot.on { background:var(--green); box-shadow:0 0 8px var(--green); }
+
+/* ── ESP32 CODE ── */
+.esp-section {
+  background:var(--panel); border:1px solid var(--border);
+  border-radius:6px; padding:12px;
+}
+.esp-header {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:10px;
+}
+.esp-title {
+  font-family:'Orbitron',monospace; font-size:0.65rem;
+  color:var(--cyan); letter-spacing:2px;
+}
+.esp-badge {
+  font-size:0.55rem; background:rgba(255,107,53,0.1);
+  border:1px solid var(--orange); color:var(--orange);
+  padding:2px 8px; border-radius:3px; letter-spacing:1px;
+}
+.code-block {
+  background:#040810; border:1px solid var(--border);
+  border-radius:4px; padding:10px;
+  font-size:0.62rem; line-height:1.7;
+  overflow-x:auto; max-height:180px; overflow-y:auto;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+}
+.c-keyword { color:#ff79c6; }
+.c-type { color:#8be9fd; }
+.c-string { color:#f1fa8c; }
+.c-comment { color:#6272a4; }
+.c-func { color:#50fa7b; }
+.c-num { color:#bd93f9; }
+.c-var { color:var(--text); }
+.c-macro { color:var(--orange); }
+
+/* ── SERIAL MONITOR ── */
+.serial-monitor {
+  background:#040810; border:1px solid var(--border);
+  border-radius:6px; padding:10px;
+  max-height:80px; overflow-y:auto;
+  scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+}
+.serial-line { font-size:0.62rem; color:var(--dim); line-height:1.6; }
+.serial-line.new { color:var(--green); animation:fade-serial 4s forwards; }
+@keyframes fade-serial { 0%,50%{color:var(--green)}100%{color:var(--dim)} }
+
+/* ── CIRCUIT SVG ── */
+#circuit-svg {
+  width:100% !important;
+  height:auto !important;
+  display:block;
+  max-width:100%;
+}
+
+/* ── CIRCUIT SVG STYLES ── */
+.comp-box { fill:#0d1526; stroke:#1a2d4a; stroke-width:1.5; rx:4; }
+.comp-label { font-family:'Share Tech Mono',monospace; font-size:9px; fill:#c8d8e8; }
+.comp-title { font-family:'Orbitron',monospace; font-size:8px; fill:#00d4ff; }
+.wire-red { stroke:#ff3355; stroke-width:1.5; fill:none; }
+.wire-black { stroke:#334455; stroke-width:1.5; fill:none; }
+.wire-yellow { stroke:#ffd700; stroke-width:1.5; fill:none; }
+.wire-green { stroke:#00ff88; stroke-width:1.5; fill:none; }
+.wire-blue { stroke:#00aaff; stroke-width:1.5; fill:none; }
+.wire-orange { stroke:#ff6b35; stroke-width:1.5; fill:none; }
+.wire-white { stroke:#aabbcc; stroke-width:1.5; fill:none; }
+
+/* ESP32 clickable group hover */
+#esp32-group:hover rect:first-child {
+  stroke: #00ffaa;
+  filter: drop-shadow(0 0 10px rgba(0,255,136,0.5));
+}
+#esp32-group:hover text {
+  fill: #00ffcc;
+}
+
+/* Responsive */
+@media(max-width:900px){
+  .main{grid-template-columns:1fr;grid-template-rows:auto auto;height:auto;}
+  .left-panel{height:400px;}
+}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="header">
+  <h1>⚡ SMART WATER TANK SYSTEM</h1>
+  <div class="header-right">
+    <div class="live-dot"></div>
+    <span>SIMULATION ACTIVE</span>
+    <span style="color:var(--cyan)" id="hdr-mode">AUTO MODE</span>
+    <span id="hdr-time" style="color:var(--dim)"></span>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- ═══ LEFT: CIRCUIT ═══ -->
+  <div class="panel left-panel">
+    <div class="panel-label">ESP32 Circuit Diagram</div>
+
+    <svg id="circuit-svg" viewBox="0 0 500 620" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid meet">
+      <defs>
+        <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#0d1526" stroke-width="0.5"/>
+        </pattern>
+        <filter id="glow-cyan">
+          <feGaussianBlur stdDeviation="2" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+        <filter id="glow-green">
+          <feGaussianBlur stdDeviation="1.5" result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+
+      <!-- Background -->
+      <rect width="500" height="620" fill="#060a14"/>
+      <rect width="500" height="620" fill="url(#grid)"/>
+
+      <!-- ══════════════════════════════════════
+           HC-SR04  — top-center
+           ══════════════════════════════════════ -->
+      <rect x="155" y="16" width="150" height="56" rx="5" fill="#0d1526" stroke="#00d4ff" stroke-width="1.5" filter="url(#glow-cyan)"/>
+      <!-- transducers -->
+      <circle cx="192" cy="44" r="16" fill="#1a2d4a" stroke="#00d4ff" stroke-width="1"/>
+      <circle cx="192" cy="44" r="9"  fill="#2a3d5a" stroke="#00d4ff" stroke-width="0.5"/>
+      <circle cx="268" cy="44" r="16" fill="#1a2d4a" stroke="#00d4ff" stroke-width="1"/>
+      <circle cx="268" cy="44" r="9"  fill="#2a3d5a" stroke="#00d4ff" stroke-width="0.5"/>
+      <text x="230" y="26" text-anchor="middle" font-family="Orbitron,monospace" font-size="8.5" fill="#00d4ff" font-weight="700">HC-SR04</text>
+      <text x="230" y="66" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#3a5470">[On Tank Cap]</text>
+      <!-- pin wires down -->
+      <line x1="172" y1="72" x2="172" y2="84" stroke="#ff3355" stroke-width="1.5"/>
+      <line x1="186" y1="72" x2="186" y2="84" stroke="#334455" stroke-width="1.5"/>
+      <line x1="200" y1="72" x2="200" y2="84" stroke="#ffd700" stroke-width="1.5"/>
+      <line x1="214" y1="72" x2="214" y2="84" stroke="#00ff88" stroke-width="1.5"/>
+      <!-- pin labels -->
+      <text x="168" y="93" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">VCC</text>
+      <text x="182" y="93" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">GND</text>
+      <text x="196" y="93" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">TRG</text>
+      <text x="210" y="93" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">ECH</text>
+
+      <!-- ══════════════════════════════════════
+           ESP32 DevKit V1  — center (clickable)
+           ══════════════════════════════════════ -->
+      <g id="esp32-group" onclick="openESPModal()" style="cursor:pointer">
+        <rect x="155" y="240" width="150" height="100" rx="5" fill="#0d2010" stroke="#00aa44" stroke-width="2" filter="url(#glow-green)">
+          <animate attributeName="stroke-opacity" values="1;0.5;1" dur="2.5s" repeatCount="indefinite"/>
+        </rect>
+        <rect x="158" y="243" width="144" height="94" rx="3" fill="#0a1c0a" stroke="#006622" stroke-width="0.5"/>
+        <text x="230" y="267" text-anchor="middle" font-family="Orbitron,monospace" font-size="12" fill="#00d4ff" font-weight="700">ESP32</text>
+        <text x="230" y="281" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7.5" fill="#4a6480">DevKit V1</text>
+        <!-- VIEW CODE badge -->
+        <rect x="188" y="287" width="84" height="16" rx="3" fill="rgba(0,212,255,0.12)" stroke="#00d4ff" stroke-width="0.8"/>
+        <text x="230" y="298" text-anchor="middle" font-family="Orbitron,monospace" font-size="7" fill="#00d4ff" letter-spacing="1">&#9654; VIEW CODE</text>
+        <text x="230" y="322" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="9" fill="#00d4ff">))WiFi((</text>
+      </g>
+      <!-- LEFT pin dots & labels -->
+      <circle cx="155" cy="300" r="3" fill="#ffd700"/>
+      <circle cx="155" cy="313" r="3" fill="#00d4ff"/>
+      <circle cx="155" cy="326" r="3" fill="#00ff88"/>
+      <text x="100" y="303" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480" text-anchor="end">GPIO26</text>
+      <text x="100" y="316" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480" text-anchor="end">GPIO14</text>
+      <text x="100" y="329" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480" text-anchor="end">GPIO12</text>
+      <!-- RIGHT pin dots & labels -->
+      <circle cx="305" cy="261" r="3" fill="#ff3355"/>
+      <circle cx="305" cy="274" r="3" fill="#00ff88"/>
+      <circle cx="305" cy="287" r="3" fill="#ff6b35"/>
+      <circle cx="305" cy="300" r="3" fill="#00aaff"/>
+      <circle cx="305" cy="313" r="3" fill="#00aaff"/>
+      <text x="310" y="264" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480">GPIO25</text>
+      <text x="310" y="277" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480">GPIO27</text>
+      <text x="310" y="290" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480">GPIO33</text>
+      <text x="310" y="303" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480">GPIO21</text>
+      <text x="310" y="316" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480">GPIO22</text>
+      <!-- BOTTOM GND / 3V3 / VIN -->
+      <circle cx="185" cy="340" r="2.5" fill="#334455"/>
+      <circle cx="200" cy="340" r="2.5" fill="#ff3355"/>
+      <circle cx="265" cy="340" r="2.5" fill="#334455"/>
+      <circle cx="280" cy="340" r="2.5" fill="#ff6b35"/>
+      <text x="179" y="352" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">GND</text>
+      <text x="194" y="352" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">3V3</text>
+      <text x="259" y="352" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">GND</text>
+      <text x="274" y="352" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">VIN</text>
+
+      <!-- ══════════════════════════════════════
+           BUZZER  — top-left
+           ══════════════════════════════════════ -->
+      <circle cx="56" cy="56" r="26" fill="#0d1526" stroke="#ffd700" stroke-width="1.5"/>
+      <circle cx="56" cy="56" r="17" fill="#1a1a00" stroke="#ffd700" stroke-width="0.7"/>
+      <circle cx="56" cy="56" r="6"  fill="#ffd700" opacity="0.45"/>
+      <text x="56" y="30" text-anchor="middle" font-family="Orbitron,monospace" font-size="8" fill="#ffd700">BUZZER</text>
+      <!-- pins -->
+      <line x1="44" y1="82" x2="44" y2="96" stroke="#ff3355" stroke-width="1.5"/>
+      <line x1="57" y1="82" x2="57" y2="96" stroke="#334455" stroke-width="1.5"/>
+      <text x="39" y="105" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">+</text>
+      <text x="53" y="105" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">-</text>
+
+      <!-- ══════════════════════════════════════
+           RELAY MODULE  — left-center
+           ══════════════════════════════════════ -->
+      <rect x="12" y="200" width="100" height="68" rx="4" fill="#0d1526" stroke="#ff6b35" stroke-width="1.5"/>
+      <rect x="22" y="212" width="35" height="24" rx="2" fill="#1a1000" stroke="#ff6b35" stroke-width="1"/>
+      <circle cx="39" cy="224" r="7" fill="#2a1a00" stroke="#ff6b35" stroke-width="1.2"/>
+      <rect x="65" y="210" width="36" height="16" rx="2" fill="#1a2d4a" stroke="#3a5470" stroke-width="1"/>
+      <text x="62" y="196" text-anchor="middle" font-family="Orbitron,monospace" font-size="8.5" fill="#ff6b35">RELAY</text>
+      <text x="62" y="280" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480">KS2E-M-DC5</text>
+      <!-- right pins -->
+      <circle cx="112" cy="218" r="2.5" fill="#ff3355"/>
+      <circle cx="112" cy="232" r="2.5" fill="#334455"/>
+      <circle cx="112" cy="246" r="2.5" fill="#ff6b35"/>
+      <text x="116" y="221" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">IN</text>
+      <text x="116" y="235" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">GND</text>
+      <text x="116" y="249" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">VCC</text>
+      <!-- left pins (pump side) -->
+      <circle cx="12" cy="222" r="2.5" fill="#ff3355"/>
+      <circle cx="12" cy="236" r="2.5" fill="#334455"/>
+      <text x="2"  y="221" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480" text-anchor="middle">L</text>
+      <text x="2"  y="235" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480" text-anchor="middle">N</text>
+
+      <!-- ══════════════════════════════════════
+           PUMP / DC MOTOR — left-lower
+           ══════════════════════════════════════ -->
+      <rect x="12" y="370" width="76" height="60" rx="4" fill="#0d1526" stroke="#00d4ff" stroke-width="1.5"/>
+      <circle cx="50" cy="400" r="20" fill="#1a2d4a" stroke="#00d4ff" stroke-width="1"/>
+      <circle cx="50" cy="400" r="10" fill="#2a3d5a"/>
+      <circle cx="50" cy="400" r="4"  fill="#3a4d6a"/>
+      <text x="50" y="365" text-anchor="middle" font-family="Orbitron,monospace" font-size="8.5" fill="#00d4ff">PUMP</text>
+      <text x="50" y="442" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480">DC Motor</text>
+      <!-- pins -->
+      <line x1="34" y1="420" x2="34" y2="434" stroke="#ff3355" stroke-width="1.5"/>
+      <line x1="66" y1="420" x2="66" y2="434" stroke="#334455" stroke-width="1.5"/>
+      <text x="29" y="443" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">+</text>
+      <text x="62" y="443" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">-</text>
+
+      <!-- ══════════════════════════════════════
+           BATTERY 9V  — top-right
+           ══════════════════════════════════════ -->
+      <rect x="388" y="180" width="74" height="52" rx="4" fill="#1a1a00" stroke="#ffd700" stroke-width="1.5"/>
+      <rect x="402" y="173" width="12" height="8" rx="2" fill="#ffd700"/>
+      <rect x="422" y="175" width="8" height="6" rx="1" fill="#4a6480"/>
+      <text x="425" y="208" text-anchor="middle" font-family="Orbitron,monospace" font-size="13" fill="#ffd700" font-weight="700">9V</text>
+      <text x="425" y="222" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480">Battery</text>
+      <!-- pins -->
+      <line x1="408" y1="232" x2="408" y2="246" stroke="#ff3355" stroke-width="1.5"/>
+      <line x1="442" y1="232" x2="442" y2="246" stroke="#334455" stroke-width="1.5"/>
+      <text x="403" y="254" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#4a6480">+</text>
+      <text x="438" y="254" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#4a6480">-</text>
+
+      <!-- ══════════════════════════════════════
+           LCD I2C 16x2  — bottom-right
+           ══════════════════════════════════════ -->
+      <rect x="320" y="430" width="160" height="68" rx="4" fill="#001a00" stroke="#00aa44" stroke-width="1.5"/>
+      <rect x="328" y="438" width="144" height="36" rx="2" fill="#002200" stroke="#003300" stroke-width="0.5"/>
+      <!-- screen pixel rows -->
+      <rect x="333" y="444" width="70" height="8" rx="1" fill="#003300"/>
+      <rect x="333" y="456" width="90" height="8" rx="1" fill="#003300"/>
+      <text x="400" y="426" text-anchor="middle" font-family="Orbitron,monospace" font-size="8.5" fill="#00aa44">LCD I2C 16×2</text>
+      <!-- I2C pins at bottom -->
+      <line x1="336" y1="498" x2="336" y2="510" stroke="#334455" stroke-width="1.5"/>
+      <line x1="350" y1="498" x2="350" y2="510" stroke="#ff3355" stroke-width="1.5"/>
+      <line x1="364" y1="498" x2="364" y2="510" stroke="#00aaff" stroke-width="1.5"/>
+      <line x1="378" y1="498" x2="378" y2="510" stroke="#ffd700" stroke-width="1.5"/>
+      <text x="330" y="520" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">GND</text>
+      <text x="344" y="520" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">VCC</text>
+      <text x="358" y="520" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">SDA</text>
+      <text x="372" y="520" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">SCL</text>
+
+      <!-- ══════════════════════════════════════
+           MODE SWITCH & BUTTON  — bottom-left
+           ══════════════════════════════════════ -->
+      <!-- MODE SW -->
+      <rect x="12" y="490" width="60" height="40" rx="4" fill="#0d1526" stroke="#3a5470" stroke-width="1.5"/>
+      <rect x="27" y="502" width="28" height="14" rx="3" fill="#1a2d4a" stroke="#4a6480" stroke-width="1"/>
+      <text x="42" y="487" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480">MODE SW</text>
+      <line x1="24" y1="530" x2="24" y2="542" stroke="#ffd700" stroke-width="1.5"/>
+      <line x1="60" y1="530" x2="60" y2="542" stroke="#334455" stroke-width="1.5"/>
+      <text x="19" y="551" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">SIG</text>
+      <text x="55" y="551" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">GND</text>
+
+      <!-- BUTTON -->
+      <rect x="100" y="490" width="60" height="40" rx="4" fill="#0d1526" stroke="#3a5470" stroke-width="1.5"/>
+      <circle cx="130" cy="510" r="12" fill="#1a2d4a" stroke="#4a6480" stroke-width="1"/>
+      <circle cx="130" cy="510" r="5"  fill="#2a3d5a"/>
+      <text x="130" y="487" text-anchor="middle" font-family="Share Tech Mono,monospace" font-size="7" fill="#4a6480">BUTTON</text>
+      <line x1="112" y1="530" x2="112" y2="542" stroke="#00ff88" stroke-width="1.5"/>
+      <line x1="148" y1="530" x2="148" y2="542" stroke="#334455" stroke-width="1.5"/>
+      <text x="106" y="551" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">SIG</text>
+      <text x="143" y="551" font-family="Share Tech Mono,monospace" font-size="6" fill="#4a6480">GND</text>
+
+      <!-- ══════════════════════════════════════════
+           WIRES
+           Color coding:
+             red    = VCC/Power
+             black  = GND (#334455)
+             yellow = Signal
+             green  = Echo
+             blue   = I2C Data
+             orange = Relay/Control
+           ══════════════════════════════════════════ -->
+
+      <!-- HC-SR04 VCC → ESP32 3V3 -->
+      <path d="M172,84 L172,160 L200,160 L200,340" class="wire-red"/>
+      <!-- HC-SR04 GND → ESP32 GND -->
+      <path d="M186,84 L186,164 L185,164 L185,340" class="wire-black"/>
+      <!-- HC-SR04 TRIG → ESP32 GPIO14 (left pin) -->
+      <path d="M200,84 L200,170 L130,170 L130,313 L155,313" class="wire-yellow"/>
+      <!-- HC-SR04 ECHO → ESP32 GPIO12 (left pin) -->
+      <path d="M214,84 L214,175 L126,175 L126,326 L155,326" class="wire-green"/>
+
+      <!-- Buzzer + → ESP32 GPIO26 (left pin) -->
+      <path d="M44,96 L44,180 L122,180 L122,300 L155,300" class="wire-yellow" style="stroke:#ffd700"/>
+      <!-- Buzzer - → ESP32 GND -->
+      <path d="M57,96 L57,160 L186,160" class="wire-black"/>
+
+      <!-- Relay IN → ESP32 GPIO27 (right pin) -->
+      <path d="M112,218 L140,218 L140,274 L305,274" class="wire-orange"/>
+      <!-- Relay GND → ESP32 GND bus -->
+      <path d="M112,232 L138,232 L138,340 L265,340" class="wire-black"/>
+      <!-- Relay VCC → Battery + -->
+      <path d="M112,246 L134,246 L134,150 L408,150 L408,180" class="wire-red"/>
+      <!-- Battery - → ESP32 GND bus -->
+      <path d="M442,246 L442,150 L442,146 L265,146 L265,340" class="wire-black"/>
+
+      <!-- Relay Normally-Open → Pump + -->
+      <path d="M12,222 L6,222 L6,400 L34,400 L34,420" class="wire-red"/>
+      <!-- Pump - → GND bus -->
+      <path d="M66,420 L66,458 L4,458 L4,232 L12,232" class="wire-black"/>
+
+      <!-- LCD GND → ESP32 GND -->
+      <path d="M336,510 L336,525 L470,525 L470,350 L280,350 L280,340" class="wire-black"/>
+      <!-- LCD VCC → ESP32 3V3 -->
+      <path d="M350,510 L350,530 L475,530 L475,340 L200,340" class="wire-red"/>
+      <!-- LCD SDA → ESP32 GPIO21 -->
+      <path d="M364,510 L364,535 L480,535 L480,300 L305,300" class="wire-blue"/>
+      <!-- LCD SCL → ESP32 GPIO22 -->
+      <path d="M378,510 L378,540 L485,540 L485,313 L305,313" class="wire-yellow"/>
+
+      <!-- Mode SW SIG → ESP32 GPIO25 (right pin) -->
+      <path d="M24,542 L24,560 L430,560 L430,261 L305,261" class="wire-yellow" style="stroke:#aabbcc;opacity:0.7"/>
+      <!-- Mode SW GND -->
+      <path d="M60,542 L60,565 L468,565 L468,350" class="wire-black" style="opacity:0.5"/>
+
+      <!-- Button SIG → ESP32 GPIO33 -->
+      <path d="M112,542 L112,556 L435,556 L435,287 L305,287" class="wire-green" style="stroke:#00ff88;opacity:0.8"/>
+      <!-- Button GND -->
+      <path d="M148,542 L148,570 L472,570 L472,355" class="wire-black" style="opacity:0.4"/>
+
+      <!-- ══════════════════════════════════════
+           LEGEND  — bottom-center
+           ══════════════════════════════════════ -->
+      <rect x="180" y="562" width="122" height="50" rx="4" fill="#0d1526" stroke="#1a2d4a" stroke-width="1"/>
+      <text x="241" y="576" text-anchor="middle" font-family="Orbitron,monospace" font-size="7" fill="#4a6480" letter-spacing="2">LEGEND</text>
+      <line x1="188" y1="586" x2="208" y2="586" stroke="#ff3355" stroke-width="1.5"/>
+      <text x="212" y="589" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#4a6480">VCC / Power</text>
+      <line x1="188" y1="596" x2="208" y2="596" stroke="#334455" stroke-width="1.5"/>
+      <text x="212" y="599" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#4a6480">GND</text>
+      <line x1="188" y1="606" x2="208" y2="606" stroke="#ffd700" stroke-width="1.5"/>
+      <text x="212" y="609" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#4a6480">Signal / Ctrl</text>
+      <line x1="290" y1="586" x2="310" y2="586" stroke="#00aaff" stroke-width="1.5"/>
+      <text x="314" y="589" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#4a6480">I2C Data</text>
+      <line x1="290" y1="596" x2="310" y2="596" stroke="#00ff88" stroke-width="1.5"/>
+      <text x="314" y="599" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#4a6480">Echo</text>
+      <line x1="290" y1="606" x2="310" y2="606" stroke="#ff6b35" stroke-width="1.5"/>
+      <text x="314" y="609" font-family="Share Tech Mono,monospace" font-size="6.5" fill="#4a6480">Relay Ctrl</text>
+
+    </svg>
+  </div>
+
+  <!-- ═══ RIGHT: TANK + CONTROLS ═══ -->
+  <div class="panel right-panel">
+    <div class="panel-label">Tank Simulation & Controls</div>
+
+    <!-- TOP ROW: Tank + Info -->
+    <div class="top-row">
+
+      <!-- Tank -->
+      <div class="tank-wrapper">
+        <span class="sensor-label">HC-SR04</span>
+        <div class="ultrasonic-top">
+          <span>◁ ▷ SONAR</span>
+        </div>
+        <div class="sensor-beam"></div>
+        <div class="tank-cap"></div>
+        <div class="tank-outer" id="tank">
+          <!-- Motor inlet pipe -->
+          <div class="motor-pipe"></div>
+          <div class="water-flow-in" id="flow-in"></div>
+          <!-- Water fill -->
+          <div class="water-fill" id="water-fill" style="height:60%">
+            <div class="wave-container">
+              <div class="wave wave1"></div>
+              <div class="wave wave2"></div>
+            </div>
+            <div class="water-body"></div>
+          </div>
+          <!-- Level markers -->
+          <div class="tank-markers">
+            <span>100%</span>
+            <span>80%</span>
+            <span>60%</span>
+            <span>40%</span>
+            <span>20%</span>
+            <span>0%</span>
+          </div>
+          <!-- Level text -->
+          <div class="level-text" id="level-text">60%</div>
+        </div>
+        <!-- Valve -->
+        <div class="valve-section">
+          <div class="valve-pipe-top"></div>
+          <div class="valve-body" id="valve-btn" onclick="toggleValve()">
+            <span id="valve-label">⬡ OFF</span>
+          </div>
+          <div class="valve-pipe-bottom"></div>
+          <div class="drain-drop" id="drain-drop"></div>
+        </div>
+        <span style="font-size:0.55rem;color:var(--dim);margin-top:2px">VALVE</span>
+      </div>
+
+      <!-- Info column -->
+      <div class="info-col">
+
+        <!-- Water Level -->
+        <div class="info-card">
+          <div class="info-card-title">Water Level</div>
+          <div><span class="info-value" id="level-val">60</span><span class="info-unit">%</span></div>
+          <div style="margin-top:6px;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+            <div id="level-bar" style="height:100%;width:60%;background:var(--cyan);transition:width 0.3s;border-radius:2px"></div>
+          </div>
+        </div>
+
+        <!-- Distance (ultrasonic) -->
+        <div class="info-card">
+          <div class="info-card-title">Ultrasonic Distance</div>
+          <div><span class="info-value" id="dist-val">116</span><span class="info-unit">cm</span></div>
+          <div style="font-size:0.6rem;color:var(--dim);margin-top:2px">Tank depth: 290 cm | Min: 40cm | Max: 330cm</div>
+        </div>
+
+        <!-- ML Threshold -->
+        <div class="info-card ml-card">
+          <div class="ml-badge">🧠 ML MODEL</div>
+          <div class="info-card-title">Auto-ON Threshold</div>
+          <div><span class="ml-value" id="ml-thresh-val">20</span><span class="info-unit">%</span></div>
+          <div class="ml-rate-bar"><div class="ml-rate-fill" id="ml-rate-fill" style="width:0%"></div></div>
+          <div class="ml-status" id="ml-status">Collecting usage data...</div>
+        </div>
+
+        <!-- Custom Threshold Override -->
+        <div class="info-card" style="border-color:var(--yellow)">
+          <div class="info-card-title" style="color:var(--yellow)">Custom Threshold Override</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+            <input type="number" id="custom-thresh-input" min="5" max="90" placeholder="e.g. 35"
+              style="width:70px;padding:4px 8px;background:#0d1526;border:1px solid var(--yellow);
+              border-radius:4px;color:var(--yellow);font-family:'Share Tech Mono',monospace;
+              font-size:0.8rem;outline:none"/>
+            <button onclick="applyCustomThresh()"
+              style="padding:4px 12px;border:1px solid var(--yellow);border-radius:4px;
+              background:rgba(255,215,0,0.1);color:var(--yellow);font-family:'Share Tech Mono',monospace;
+              font-size:0.72rem;cursor:pointer;letter-spacing:1px">APPLY</button>
+            <button onclick="resetToML()"
+              style="padding:4px 10px;border:1px solid var(--dim);border-radius:4px;
+              background:transparent;color:var(--dim);font-family:'Share Tech Mono',monospace;
+              font-size:0.72rem;cursor:pointer;letter-spacing:1px">ML</button>
+          </div>
+          <div style="font-size:0.58rem;color:var(--dim);margin-top:4px" id="thresh-override-status">
+            Using ML prediction. Enter value (5–90%) to override.
+          </div>
+        </div>
+
+        <!-- Fill Time -->
+        <div class="info-card">
+          <div class="info-card-title">Estimated Fill Time</div>
+          <div><span class="info-value" id="fill-time-val">--</span></div>
+          <div style="font-size:0.6rem;color:var(--dim);margin-top:2px" id="fill-rate-txt">Motor OFF</div>
+        </div>
+
+        <!-- Buzzer + Motor status -->
+        <div class="info-card" style="display:flex;justify-content:space-between;align-items:center">
+          <div class="buzzer-wrap">
+            <div class="buzzer-icon" id="buzzer-icon">🔔</div>
+            <div>
+              <div style="font-size:0.62rem;color:var(--dim)">BUZZER</div>
+              <div class="buzzer-text" id="buzzer-txt" style="color:var(--dim)">SILENT</div>
+            </div>
+          </div>
+          <div class="motor-indicator">
+            <div class="motor-dot" id="motor-dot"></div>
+            <div>
+              <div style="font-size:0.62rem;color:var(--dim)">MOTOR</div>
+              <div id="motor-txt" style="font-size:0.72rem;color:var(--dim)">OFF</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- LCD -->
+    <div class="lcd-display">
+      <div class="lcd-label">I2C LCD Display (16×2)</div>
+      <div class="lcd-line" id="lcd-line1">Lvl:60%  AUTO    </div>
+      <div class="lcd-line" id="lcd-line2">Motor:OFF        </div>
+    </div>
+
+    <!-- Controls -->
+    <div class="controls-row">
+
+      <!-- Mode -->
+      <div class="ctrl-group">
+        <div class="ctrl-label">Mode Switch</div>
+        <div class="toggle-wrap">
+          <label class="toggle-switch">
+            <input type="checkbox" id="mode-toggle" onchange="toggleMode()">
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-text auto" id="mode-label">AUTO</span>
+        </div>
+      </div>
+
+      <!-- Motor -->
+      <div class="ctrl-group">
+        <div class="ctrl-label">Motor Control</div>
+        <button class="btn" id="motor-btn" onclick="toggleMotor()" disabled>MOTOR OFF</button>
+        <div style="font-size:0.58rem;color:var(--dim);margin-top:4px" id="motor-ctrl-hint">Controlled by AUTO</div>
+      </div>
+
+      <!-- Valve -->
+      <div class="ctrl-group">
+        <div class="ctrl-label">Valve Control</div>
+        <button class="btn danger" id="valve-ctrl-btn" onclick="toggleValve()">VALVE CLOSED</button>
+        <div style="font-size:0.58rem;color:var(--dim);margin-top:4px">Toggle water flow</div>
+      </div>
+
+      <!-- Fill speed -->
+      <div class="ctrl-group">
+        <div class="ctrl-label">Fill Speed</div>
+        <input type="range" id="fill-speed" min="1" max="5" value="3"
+          style="width:100%;accent-color:var(--cyan);cursor:pointer">
+        <div style="font-size:0.6rem;color:var(--dim);margin-top:3px" id="speed-label">Normal (×3)</div>
+      </div>
+
+    </div>
+
+    <!-- Serial Monitor -->
+    <div>
+      <div class="panel-label" style="margin-bottom:4px">Serial Monitor</div>
+      <div class="serial-monitor" id="serial-monitor"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══ ESP32 CODE MODAL ══ -->
+<div id="esp-modal" style="
+  display:none; position:fixed; inset:0; z-index:999;
+  background:rgba(4,8,16,0.88); backdrop-filter:blur(4px);
+  align-items:center; justify-content:center;">
+  <div style="
+    background:#0d1526; border:1px solid var(--cyan);
+    border-radius:10px; width:min(780px,95vw); max-height:88vh;
+    display:flex; flex-direction:column;
+    box-shadow:0 0 60px rgba(0,212,255,0.18);">
+    <!-- modal header -->
+    <div style="
+      display:flex; align-items:center; justify-content:space-between;
+      padding:14px 18px; border-bottom:1px solid var(--border);">
+      <div style="display:flex;align-items:center;gap:12px;">
+        <span style="font-family:'Orbitron',monospace;font-size:0.75rem;
+          color:var(--cyan);letter-spacing:2px;">ESP32 FIRMWARE</span>
+        <span style="font-size:0.55rem;background:rgba(255,107,53,0.12);
+          border:1px solid var(--orange);color:var(--orange);
+          padding:2px 8px;border-radius:3px;letter-spacing:1px;">C++ / Arduino</span>
+      </div>
+      <button onclick="closeESPModal()" style="
+        background:none;border:1px solid var(--border);border-radius:5px;
+        color:var(--dim);font-size:1rem;cursor:pointer;padding:2px 10px;
+        transition:all 0.2s;" onmouseover="this.style.borderColor='var(--red)';this.style.color='var(--red)'"
+        onmouseout="this.style.borderColor='var(--border)';this.style.color='var(--dim)'">✕</button>
+    </div>
+    <!-- code body -->
+    <div style="overflow-y:auto;padding:18px 20px;flex:1;
+      scrollbar-width:thin;scrollbar-color:var(--border) transparent;">
+<pre style="margin:0;font-family:'Share Tech Mono',monospace;font-size:0.72rem;
+  line-height:1.75;background:none;white-space:pre;"><span class="c-comment">// ═══════════════════════════════════════════════════════════════
+//  Smart Water Tank System — ESP32 Firmware
+//  Reads HC-SR04, controls relay + buzzer, displays on LCD,
+//  fetches ML threshold from server via WiFi.
+// ═══════════════════════════════════════════════════════════════</span>
+
+<span class="c-macro">#include</span> <span class="c-string">&lt;WiFi.h&gt;</span>
+<span class="c-macro">#include</span> <span class="c-string">&lt;HTTPClient.h&gt;</span>
+<span class="c-macro">#include</span> <span class="c-string">&lt;Wire.h&gt;</span>
+<span class="c-macro">#include</span> <span class="c-string">&lt;LiquidCrystal_I2C.h&gt;</span>
+
+<span class="c-comment">// ── Pin definitions ──────────────────────────────────────────────</span>
+<span class="c-macro">#define</span> <span class="c-var">TRIG_PIN</span>    <span class="c-num">14</span>    <span class="c-comment">// HC-SR04 trigger</span>
+<span class="c-macro">#define</span> <span class="c-var">ECHO_PIN</span>    <span class="c-num">12</span>    <span class="c-comment">// HC-SR04 echo</span>
+<span class="c-macro">#define</span> <span class="c-var">RELAY_PIN</span>   <span class="c-num">27</span>    <span class="c-comment">// Pump relay</span>
+<span class="c-macro">#define</span> <span class="c-var">BUZZER_PIN</span>  <span class="c-num">26</span>    <span class="c-comment">// Buzzer alert</span>
+<span class="c-macro">#define</span> <span class="c-var">MODE_SW</span>     <span class="c-num">25</span>    <span class="c-comment">// AUTO / MANUAL toggle switch</span>
+<span class="c-macro">#define</span> <span class="c-var">BTN_PIN</span>     <span class="c-num">33</span>    <span class="c-comment">// Manual motor button</span>
+
+<span class="c-comment">// ── WiFi / Server config ─────────────────────────────────────────</span>
+<span class="c-keyword">const</span> <span class="c-type">char</span>* <span class="c-var">ssid</span>     = <span class="c-string">"YOUR_WIFI_SSID"</span>;
+<span class="c-keyword">const</span> <span class="c-type">char</span>* <span class="c-var">password</span> = <span class="c-string">"YOUR_WIFI_PASS"</span>;
+<span class="c-keyword">const</span> <span class="c-type">char</span>* <span class="c-var">server</span>   = <span class="c-string">"http://your-server/api/threshold"</span>;
+
+<span class="c-comment">// ── Globals ──────────────────────────────────────────────────────</span>
+<span class="c-type">LiquidCrystal_I2C</span> <span class="c-func">lcd</span>(<span class="c-num">0x27</span>, <span class="c-num">16</span>, <span class="c-num">2</span>);
+<span class="c-type">float</span>   <span class="c-var">mlThreshold</span>  = <span class="c-num">20.0</span>;  <span class="c-comment">// % — updated from ML server</span>
+<span class="c-type">bool</span>    <span class="c-var">manualMotor</span>  = <span class="c-keyword">false</span>;
+<span class="c-type">long</span>    <span class="c-var">lastFetchMs</span>  = <span class="c-num">0</span>;
+<span class="c-keyword">const</span> <span class="c-type">long</span> <span class="c-var">FETCH_INTERVAL</span> = <span class="c-num">5000</span>; <span class="c-comment">// ms between threshold fetches</span>
+
+<span class="c-comment">// ── Fetch ML threshold from server ──────────────────────────────</span>
+<span class="c-type">void</span> <span class="c-func">fetchThreshold</span>() {
+    <span class="c-keyword">if</span> (WiFi.<span class="c-func">status</span>() != WL_CONNECTED) <span class="c-keyword">return</span>;
+
+    <span class="c-type">HTTPClient</span> <span class="c-var">http</span>;
+    <span class="c-var">http</span>.<span class="c-func">begin</span>(<span class="c-var">server</span>);
+    <span class="c-var">http</span>.<span class="c-func">setTimeout</span>(<span class="c-num">3000</span>);
+
+    <span class="c-type">int</span> <span class="c-var">code</span> = <span class="c-var">http</span>.<span class="c-func">GET</span>();
+    <span class="c-keyword">if</span> (<span class="c-var">code</span> == <span class="c-num">200</span>) {
+        <span class="c-type">float</span> <span class="c-var">val</span> = <span class="c-var">http</span>.<span class="c-func">getString</span>().<span class="c-func">toFloat</span>();
+        <span class="c-keyword">if</span> (<span class="c-var">val</span> >= <span class="c-num">5.0</span> &amp;&amp; <span class="c-var">val</span> &lt;= <span class="c-num">90.0</span>) {
+            <span class="c-var">mlThreshold</span> = <span class="c-var">val</span>;
+        }
+    }
+    <span class="c-var">http</span>.<span class="c-func">end</span>();
+}
+
+<span class="c-comment">// ── Measure water level via HC-SR04 ─────────────────────────────</span>
+<span class="c-type">float</span> <span class="c-func">readDistanceCm</span>() {
+    <span class="c-func">digitalWrite</span>(<span class="c-var">TRIG_PIN</span>, LOW);
+    <span class="c-func">delayMicroseconds</span>(<span class="c-num">2</span>);
+    <span class="c-func">digitalWrite</span>(<span class="c-var">TRIG_PIN</span>, HIGH);
+    <span class="c-func">delayMicroseconds</span>(<span class="c-num">10</span>);
+    <span class="c-func">digitalWrite</span>(<span class="c-var">TRIG_PIN</span>, LOW);
+
+    <span class="c-type">long</span> <span class="c-var">duration</span> = <span class="c-func">pulseIn</span>(<span class="c-var">ECHO_PIN</span>, HIGH, <span class="c-num">30000</span>);
+    <span class="c-keyword">return</span> <span class="c-var">duration</span> * <span class="c-num">0.034f</span> / <span class="c-num">2.0f</span>;
+}
+
+<span class="c-comment">// ── Setup ────────────────────────────────────────────────────────</span>
+<span class="c-type">void</span> <span class="c-func">setup</span>() {
+    Serial.<span class="c-func">begin</span>(<span class="c-num">115200</span>);
+
+    <span class="c-comment">// Pin modes</span>
+    <span class="c-func">pinMode</span>(<span class="c-var">TRIG_PIN</span>,   OUTPUT);
+    <span class="c-func">pinMode</span>(<span class="c-var">ECHO_PIN</span>,   INPUT);
+    <span class="c-func">pinMode</span>(<span class="c-var">RELAY_PIN</span>,  OUTPUT);
+    <span class="c-func">pinMode</span>(<span class="c-var">BUZZER_PIN</span>, OUTPUT);
+    <span class="c-func">pinMode</span>(<span class="c-var">MODE_SW</span>,    INPUT_PULLUP);
+    <span class="c-func">pinMode</span>(<span class="c-var">BTN_PIN</span>,    INPUT_PULLUP);
+
+    <span class="c-comment">// Safe initial states</span>
+    <span class="c-func">digitalWrite</span>(<span class="c-var">RELAY_PIN</span>,  LOW);
+    <span class="c-func">digitalWrite</span>(<span class="c-var">BUZZER_PIN</span>, LOW);
+
+    <span class="c-comment">// LCD init</span>
+    Wire.<span class="c-func">begin</span>(<span class="c-num">21</span>, <span class="c-num">22</span>);   <span class="c-comment">// SDA=GPIO21, SCL=GPIO22</span>
+    <span class="c-var">lcd</span>.<span class="c-func">init</span>();
+    <span class="c-var">lcd</span>.<span class="c-func">backlight</span>();
+    <span class="c-var">lcd</span>.<span class="c-func">setCursor</span>(<span class="c-num">0</span>, <span class="c-num">0</span>); <span class="c-var">lcd</span>.<span class="c-func">print</span>(<span class="c-string">"Water Tank Sys"</span>);
+    <span class="c-var">lcd</span>.<span class="c-func">setCursor</span>(<span class="c-num">0</span>, <span class="c-num">1</span>); <span class="c-var">lcd</span>.<span class="c-func">print</span>(<span class="c-string">"Connecting WiFi"</span>);
+
+    <span class="c-comment">// WiFi connect</span>
+    WiFi.<span class="c-func">begin</span>(<span class="c-var">ssid</span>, <span class="c-var">password</span>);
+    <span class="c-type">int</span> <span class="c-var">attempts</span> = <span class="c-num">0</span>;
+    <span class="c-keyword">while</span> (WiFi.<span class="c-func">status</span>() != WL_CONNECTED &amp;&amp; <span class="c-var">attempts</span>++ &lt; <span class="c-num">20</span>) {
+        <span class="c-func">delay</span>(<span class="c-num">500</span>);
+        Serial.<span class="c-func">print</span>(<span class="c-string">"."</span>);
+    }
+
+    <span class="c-var">lcd</span>.<span class="c-func">clear</span>();
+    <span class="c-keyword">if</span> (WiFi.<span class="c-func">status</span>() == WL_CONNECTED) {
+        Serial.<span class="c-func">println</span>(<span class="c-string">"\nWiFi connected: "</span> + WiFi.<span class="c-func">localIP</span>().<span class="c-func">toString</span>());
+        <span class="c-func">fetchThreshold</span>();
+    } <span class="c-keyword">else</span> {
+        Serial.<span class="c-func">println</span>(<span class="c-string">"\nWiFi FAILED — running offline"</span>);
+    }
+}
+
+<span class="c-comment">// ── Main loop ────────────────────────────────────────────────────</span>
+<span class="c-type">void</span> <span class="c-func">loop</span>() {
+    <span class="c-comment">// 1. Read sensor</span>
+    <span class="c-type">float</span> <span class="c-var">dist</span> = <span class="c-func">readDistanceCm</span>();
+    <span class="c-type">int</span>   <span class="c-var">pct</span>  = <span class="c-func">constrain</span>(<span class="c-func">map</span>((<span class="c-type">long</span>)<span class="c-var">dist</span>, <span class="c-num">40</span>, <span class="c-num">330</span>, <span class="c-num">100</span>, <span class="c-num">0</span>), <span class="c-num">0</span>, <span class="c-num">100</span>);
+
+    <span class="c-comment">// 2. Fetch updated ML threshold periodically</span>
+    <span class="c-keyword">if</span> (<span class="c-func">millis</span>() - <span class="c-var">lastFetchMs</span> &gt; <span class="c-var">FETCH_INTERVAL</span>) {
+        <span class="c-func">fetchThreshold</span>();
+        <span class="c-var">lastFetchMs</span> = <span class="c-func">millis</span>();
+    }
+
+    <span class="c-comment">// 3. Read controls</span>
+    <span class="c-type">bool</span> <span class="c-var">isAuto</span>   = (<span class="c-func">digitalRead</span>(<span class="c-var">MODE_SW</span>) == LOW);
+    <span class="c-type">bool</span> <span class="c-var">btnPress</span> = (<span class="c-func">digitalRead</span>(<span class="c-var">BTN_PIN</span>) == LOW);
+
+    <span class="c-comment">// 4. Motor control logic</span>
+    <span class="c-keyword">if</span> (<span class="c-var">isAuto</span>) {
+        <span class="c-comment">// AUTO: ML threshold drives the pump</span>
+        <span class="c-keyword">if</span> (<span class="c-var">pct</span> &lt; (<span class="c-type">int</span>)<span class="c-var">mlThreshold</span>) {
+            <span class="c-func">digitalWrite</span>(<span class="c-var">RELAY_PIN</span>, HIGH);   <span class="c-comment">// pump ON</span>
+        }
+        <span class="c-keyword">if</span> (<span class="c-var">pct</span> &gt;= <span class="c-num">95</span>) {
+            <span class="c-func">digitalWrite</span>(<span class="c-var">RELAY_PIN</span>, LOW);    <span class="c-comment">// pump OFF — full</span>
+        }
+    } <span class="c-keyword">else</span> {
+        <span class="c-comment">// MANUAL: button toggles pump</span>
+        <span class="c-keyword">if</span> (<span class="c-var">btnPress</span>) <span class="c-var">manualMotor</span> = !<span class="c-var">manualMotor</span>;
+        <span class="c-keyword">if</span> (<span class="c-var">pct</span> &gt;= <span class="c-num">95</span>) <span class="c-var">manualMotor</span> = <span class="c-keyword">false</span>; <span class="c-comment">// safety cutoff</span>
+        <span class="c-func">digitalWrite</span>(<span class="c-var">RELAY_PIN</span>, <span class="c-var">manualMotor</span> ? HIGH : LOW);
+    }
+
+    <span class="c-comment">// 5. Buzzer alert — low (&lt;10%) or overflow (&gt;95%)</span>
+    <span class="c-type">bool</span> <span class="c-var">alarm</span> = (<span class="c-var">pct</span> &lt; <span class="c-num">10</span> || <span class="c-var">pct</span> &gt; <span class="c-num">95</span>);
+    <span class="c-func">digitalWrite</span>(<span class="c-var">BUZZER_PIN</span>, <span class="c-var">alarm</span> ? HIGH : LOW);
+
+    <span class="c-comment">// 6. Update LCD</span>
+    <span class="c-type">char</span> <span class="c-var">line1</span>[<span class="c-num">17</span>], <span class="c-var">line2</span>[<span class="c-num">17</span>];
+    <span class="c-type">bool</span> <span class="c-var">pumpOn</span> = (<span class="c-func">digitalRead</span>(<span class="c-var">RELAY_PIN</span>) == HIGH);
+    <span class="c-func">snprintf</span>(<span class="c-var">line1</span>, <span class="c-keyword">sizeof</span>(<span class="c-var">line1</span>), <span class="c-string">"Lvl:%-3d%% %-4s    "</span>, <span class="c-var">pct</span>, <span class="c-var">isAuto</span> ? <span class="c-string">"AUTO"</span> : <span class="c-string">"MAN "</span>);
+    <span class="c-func">snprintf</span>(<span class="c-var">line2</span>, <span class="c-keyword">sizeof</span>(<span class="c-var">line2</span>), <span class="c-string">"Motor:%-3s Thr:%-2d "</span>, <span class="c-var">pumpOn</span> ? <span class="c-string">"ON "</span> : <span class="c-string">"OFF"</span>, (<span class="c-type">int</span>)<span class="c-var">mlThreshold</span>);
+    <span class="c-var">lcd</span>.<span class="c-func">setCursor</span>(<span class="c-num">0</span>, <span class="c-num">0</span>); <span class="c-var">lcd</span>.<span class="c-func">print</span>(<span class="c-var">line1</span>);
+    <span class="c-var">lcd</span>.<span class="c-func">setCursor</span>(<span class="c-num">0</span>, <span class="c-num">1</span>); <span class="c-var">lcd</span>.<span class="c-func">print</span>(<span class="c-var">line2</span>);
+
+    <span class="c-comment">// 7. Serial debug</span>
+    Serial.<span class="c-func">printf</span>(
+        <span class="c-string">"dist=%.1fcm | pct=%d%% | mode=%s | pump=%s | thresh=%.0f | alarm=%d\n"</span>,
+        <span class="c-var">dist</span>, <span class="c-var">pct</span>, <span class="c-var">isAuto</span> ? <span class="c-string">"AUTO"</span> : <span class="c-string">"MAN"</span>,
+        <span class="c-var">pumpOn</span> ? <span class="c-string">"ON"</span> : <span class="c-string">"OFF"</span>, <span class="c-var">mlThreshold</span>, (<span class="c-type">int</span>)<span class="c-var">alarm</span>
+    );
+
+    <span class="c-func">delay</span>(<span class="c-num">500</span>);
+}</pre>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════
+//  STATE
+// ════════════════════════════════════════════════
+let waterLevel    = 60;    // 0–100 %
+let valveOpen     = false;
+let motorOn       = false;
+let manualMotor   = false;
+let isAuto        = true;
+let mlThreshold   = 20;
+let buzzerActive  = false;
+let fillSpeed     = 3;
+
+// Rates per tick (100ms)
+const FILL_RATE_BASE  = 0.4;   // % per tick when motor ON (scaled by speed)
+const DRAIN_RATE_BASE = 0.25;  // % per tick when valve open (scaled by speed)
+
+// ML data
+let usageRateSamples = [];
+let lastLevel        = waterLevel;
+let lastTime         = Date.now();
+let drainAccum       = 0;
+let drainTime        = 0;
+let mlModel          = null;
+let mlReady          = false;
+let mlEpoch          = 0;
+let lastMLUpdate     = 0;
+
+// Fill rate tracking
+let fillRates = [];
+let lastFillLevel = waterLevel;
+let lastFillTime = Date.now();
+
+// Serial log
+let serialLines = [];
+
+// ════════════════════════════════════════════════
+//  TF.JS MODEL
+// ════════════════════════════════════════════════
+async function initML() {
+  mlModel = tf.sequential();
+  mlModel.add(tf.layers.dense({ units: 8, activation: 'relu', inputShape: [1] }));
+  mlModel.add(tf.layers.dense({ units: 8, activation: 'relu' }));
+  mlModel.add(tf.layers.dense({ units: 1 }));
+  mlModel.compile({ optimizer: tf.train.adam(0.01), loss: 'meanSquaredError' });
+
+  // Pre-train with synthetic data
+  // Input: usage_rate (% per second), Output: recommended threshold (%)
+  const xs = tf.tensor2d([[0.0],[0.1],[0.2],[0.5],[0.8],[1.0],[1.5],[2.0],[2.5],[3.0]]);
+  const ys = tf.tensor2d([[12],[15],[18],[24],[30],[36],[44],[52],[60],[68]]);
+  await mlModel.fit(xs, ys, { epochs: 200, verbose: 0 });
+  xs.dispose(); ys.dispose();
+  mlReady = true;
+  updateMLStatus('Pre-trained. Learning usage...');
+}
+
+async function predictThreshold(rate) {
+  if (!mlReady) return mlThreshold;
+  const inp = tf.tensor2d([[rate]]);
+  const out = mlModel.predict(inp);
+  const val = out.dataSync()[0];
+  inp.dispose(); out.dispose();
+  return Math.max(10, Math.min(75, val));
+}
+
+async function retrainML() {
+  if (!mlReady || usageRateSamples.length < 3) return;
+  // Build training data from observed usage rates
+  const pairs = usageRateSamples.map(r => {
+    // heuristic: higher rate → earlier threshold
+    const ideal = Math.min(70, Math.max(10, 12 + r * 22));
+    return [r, ideal];
+  });
+  const xs = tf.tensor2d(pairs.map(p => [p[0]]));
+  const ys = tf.tensor2d(pairs.map(p => [p[1]]));
+  await mlModel.fit(xs, ys, { epochs: 30, verbose: 0 });
+  xs.dispose(); ys.dispose();
+  mlEpoch++;
+  updateMLStatus(`Retrained ×${mlEpoch} | Samples: ${usageRateSamples.length}`);
+}
+
+function updateMLStatus(msg) {
+  document.getElementById('ml-status').textContent = msg;
+}
+
+// ════════════════════════════════════════════════
+//  CONTROLS
+// ════════════════════════════════════════════════
+function toggleMode() {
+  isAuto = !document.getElementById('mode-toggle').checked;
+  const lbl = document.getElementById('mode-label');
+  lbl.textContent = isAuto ? 'AUTO' : 'MANUAL';
+  lbl.className = 'toggle-text ' + (isAuto ? 'auto' : 'manual');
+  document.getElementById('motor-btn').disabled = isAuto;
+  document.getElementById('motor-ctrl-hint').textContent = isAuto ? 'Controlled by AUTO' : 'Click to toggle';
+  document.getElementById('hdr-mode').textContent = isAuto ? 'AUTO MODE' : 'MANUAL MODE';
+  document.getElementById('hdr-mode').style.color = isAuto ? 'var(--cyan)' : 'var(--yellow)';
+  serialLog(`MODE → ${isAuto ? 'AUTO' : 'MANUAL'}`);
+}
+
+function toggleMotor() {
+  if (isAuto) return;
+  manualMotor = !manualMotor;
+  updateMotorBtn();
+}
+
+function updateMotorBtn() {
+  const btn = document.getElementById('motor-btn');
+  btn.textContent = motorOn ? 'MOTOR ON' : 'MOTOR OFF';
+  btn.className = motorOn ? 'btn active' : 'btn';
+}
+
+function toggleValve() {
+  valveOpen = !valveOpen;
+  document.getElementById('valve-label').textContent = valveOpen ? '⬡ ON' : '⬡ OFF';
+  document.getElementById('valve-btn').className = 'valve-body' + (valveOpen ? ' open' : '');
+  document.getElementById('valve-ctrl-btn').textContent = valveOpen ? 'VALVE OPEN' : 'VALVE CLOSED';
+  document.getElementById('valve-ctrl-btn').className = 'btn danger' + (valveOpen ? ' active' : '');
+  document.getElementById('drain-drop').style.display = valveOpen ? 'block' : 'none';
+  serialLog(`VALVE → ${valveOpen ? 'OPEN (draining)' : 'CLOSED'}`);
+}
+
+document.getElementById('fill-speed').addEventListener('input', function() {
+  fillSpeed = parseInt(this.value);
+  document.getElementById('speed-label').textContent = ['','Slow (×1)','Slow (×2)','Normal (×3)','Fast (×4)','Turbo (×5)'][fillSpeed];
+});
+
+// ════════════════════════════════════════════════
+//  MAIN LOOP
+// ════════════════════════════════════════════════
+function gameLoop() {
+  const speed = fillSpeed;
+  const fillRate  = FILL_RATE_BASE * speed;
+  const drainRate = DRAIN_RATE_BASE * speed;
+  const now = Date.now();
+
+  // ── Water level change ──
+  if (valveOpen)  waterLevel -= drainRate;
+  if (motorOn)    waterLevel += fillRate;
+  waterLevel = Math.max(0, Math.min(100, waterLevel));
+
+  // ── Usage rate tracking ──
+  if (valveOpen && !motorOn) {
+    drainAccum += (lastLevel - waterLevel);
+    drainTime  += 0.1; // seconds (100ms tick)
+    if (drainTime >= 5) { // sample every 5 seconds
+      const rate = drainAccum / drainTime; // % per second
+      if (rate > 0) {
+        usageRateSamples.push(rate);
+        if (usageRateSamples.length > 20) usageRateSamples.shift();
+        const bar = Math.min(100, rate * 33);
+        document.getElementById('ml-rate-fill').style.width = bar + '%';
+        // Retrain ML every 3 samples
+        if (usageRateSamples.length % 3 === 0) {
+          retrainML().then(() => {
+            const avgRate = usageRateSamples.reduce((a,b)=>a+b,0)/usageRateSamples.length;
+            predictThreshold(avgRate).then(t => {
+              mlThreshold = t;
+              if (!useCustomThresh) {
+                document.getElementById('ml-thresh-val').textContent = Math.round(t);
+              }
+              updateMLStatus(`Rate: ${avgRate.toFixed(2)}%/s → Thresh: ${Math.round(t)}%`);
+            });
+          });
+        }
+      }
+      drainAccum = 0; drainTime = 0;
+    }
+  } else {
+    drainAccum = 0; drainTime = 0;
+  }
+  lastLevel = waterLevel;
+
+  // ── Motor logic ──
+  if (isAuto) {
+    if (waterLevel < mlThreshold) motorOn = true;
+    if (waterLevel >= 95)         motorOn = false;
+  } else {
+    if (waterLevel >= 95) { motorOn = false; manualMotor = false; }
+    else motorOn = manualMotor;
+  }
+
+  // ── Buzzer ──
+  buzzerActive = waterLevel < 10 || waterLevel > 95;
+
+  // ── Fill time estimate ──
+  let fillTimeStr = '--';
+  let fillRateTxt = 'Motor OFF';
+  if (motorOn) {
+    const netRate = fillRate - (valveOpen ? drainRate : 0); // net % per tick
+    const netPerSec = netRate * 10; // per second
+    if (netPerSec > 0) {
+      const secsLeft = (100 - waterLevel) / netPerSec;
+      const m = Math.floor(secsLeft / 60);
+      const s = Math.floor(secsLeft % 60);
+      fillTimeStr = m + 'm ' + s + 's';
+      fillRateTxt = 'Net fill: ' + netPerSec.toFixed(2) + '%/s' + (valveOpen ? ' (valve open)' : '');
+    } else {
+      fillTimeStr = 'Draining > Filling';
+      fillRateTxt = 'Net drain while motor ON';
+    }
+  }
+
+  // ── Update DOM ──
+  updateUI(fillTimeStr, fillRateTxt);
+}
+
+// ════════════════════════════════════════════════
+//  UI UPDATE
+// ════════════════════════════════════════════════
+function updateUI(fillTimeStr, fillRateTxt) {
+  const pct = Math.round(waterLevel);
+
+  // Tank visual
+  document.getElementById('water-fill').style.height = waterLevel + '%';
+  document.getElementById('level-text').textContent = pct + '%';
+  document.getElementById('level-val').textContent = pct;
+  document.getElementById('level-bar').style.width = pct + '%';
+
+  // Water color based on level
+  const waterBody = document.querySelector('.water-body');
+  if (pct < 10) {
+    waterBody.style.background = 'linear-gradient(180deg,#aa2200,#660000)';
+    document.querySelector('.wave1').style.filter = 'hue-rotate(200deg)';
+  } else if (pct > 90) {
+    waterBody.style.background = 'linear-gradient(180deg,#00aa44,#006622)';
+    document.querySelector('.wave1').style.filter = 'hue-rotate(110deg)';
+  } else {
+    waterBody.style.background = 'linear-gradient(180deg,var(--water-mid),var(--water-dark))';
+    document.querySelector('.wave1').style.filter = 'none';
+  }
+
+  // Distance (simulated: 40cm = 100%, 330cm = 0%)
+  const dist = Math.round(330 - (waterLevel / 100) * (330 - 40));
+  document.getElementById('dist-val').textContent = dist;
+
+  // Motor flow animation
+  document.getElementById('flow-in').style.display = motorOn ? 'block' : 'none';
+
+  // Motor indicators
+  document.getElementById('motor-dot').className = 'motor-dot' + (motorOn ? ' on' : '');
+  document.getElementById('motor-txt').textContent = motorOn ? 'ON' : 'OFF';
+  document.getElementById('motor-txt').style.color = motorOn ? 'var(--green)' : 'var(--dim)';
+  updateMotorBtn();
+
+  // Buzzer
+  document.getElementById('buzzer-icon').className = 'buzzer-icon' + (buzzerActive ? ' active' : '');
+  document.getElementById('buzzer-txt').textContent = buzzerActive ? 'ALERT!' : 'SILENT';
+  document.getElementById('buzzer-txt').style.color = buzzerActive ? 'var(--red)' : 'var(--dim)';
+
+  // Fill time
+  document.getElementById('fill-time-val').textContent = fillTimeStr;
+  document.getElementById('fill-rate-txt').textContent = fillRateTxt;
+  document.getElementById('fill-time-val').style.color = motorOn ? 'var(--cyan)' : 'var(--dim)';
+
+  // LCD
+  const modeStr  = isAuto ? 'AUTO' : 'MAN ';
+  const line1    = ('Lvl:' + pct + '%').padEnd(9) + ' ' + modeStr + '  ';
+  const motorStr = motorOn ? 'Motor:ON ' : 'Motor:OFF';
+  const timeStr  = motorOn ? fillTimeStr.substring(0,6) : '      ';
+  const line2    = motorStr + ' ' + timeStr;
+  document.getElementById('lcd-line1').textContent = line1.substring(0,16);
+  document.getElementById('lcd-line2').textContent = line2.substring(0,16);
+
+  // Header time
+  const now = new Date();
+  document.getElementById('hdr-time').textContent =
+    now.toLocaleTimeString('en-IN', {hour12:false});
+
+  // Level bar color
+  const lb = document.getElementById('level-bar');
+  if (pct < 10) lb.style.background = 'var(--red)';
+  else if (pct > 90) lb.style.background = 'var(--green)';
+  else lb.style.background = 'var(--cyan)';
+
+  // Serial log every ~2s
+  if (!window._lastSerial || Date.now() - window._lastSerial > 2000) {
+    serialLog(
+      `Lvl:${pct}% | ${isAuto?'AUTO':'MAN'} | Motor:${motorOn?'ON':'OFF'} | Valve:${valveOpen?'OPEN':'CLOSED'} | Thresh:${Math.round(mlThreshold)}% | Dist:${dist}cm`
+    );
+    window._lastSerial = Date.now();
+  }
+}
+
+// ════════════════════════════════════════════════
+//  SERIAL LOG
+// ════════════════════════════════════════════════
+function serialLog(msg) {
+  const now = new Date();
+  const ts = now.toLocaleTimeString('en-IN', {hour12:false});
+  const line = document.createElement('div');
+  line.className = 'serial-line new';
+  line.textContent = `[${ts}] ${msg}`;
+  const mon = document.getElementById('serial-monitor');
+  mon.appendChild(line);
+  if (mon.children.length > 20) mon.removeChild(mon.firstChild);
+  mon.scrollTop = mon.scrollHeight;
+}
+
+let useCustomThresh = false;
+let customThreshVal = 20;
+
+function applyCustomThresh() {
+  const val = parseInt(document.getElementById('custom-thresh-input').value);
+  if (isNaN(val) || val < 5 || val > 90) {
+    document.getElementById('thresh-override-status').textContent = '⚠ Enter a value between 5 and 90.';
+    document.getElementById('thresh-override-status').style.color = 'var(--red)';
+    return;
+  }
+  useCustomThresh = true;
+  customThreshVal = val;
+  mlThreshold = val;
+  document.getElementById('ml-thresh-val').textContent = val;
+  document.getElementById('thresh-override-status').textContent = `✔ Custom threshold set: ${val}%. ML paused.`;
+  document.getElementById('thresh-override-status').style.color = 'var(--yellow)';
+  serialLog(`Custom threshold applied: ${val}%`);
+}
+
+function resetToML() {
+  useCustomThresh = false;
+  document.getElementById('custom-thresh-input').value = '';
+  document.getElementById('thresh-override-status').textContent = 'Using ML prediction. Enter value (5–90%) to override.';
+  document.getElementById('thresh-override-status').style.color = 'var(--dim)';
+  serialLog('Threshold reset to ML prediction.');
+}
+
+function openESPModal() {
+  const modal = document.getElementById('esp-modal');
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeESPModal() {
+  document.getElementById('esp-modal').style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+// Close modal on backdrop click
+document.getElementById('esp-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeESPModal();
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', function(e) {
+  if (e.key === 'Escape') closeESPModal();
+});
+
+// ════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════
+window.addEventListener('load', async () => {
+  serialLog('System initializing...');
+  await initML();
+  serialLog('ML model loaded & pre-trained.');
+  serialLog('Simulation ready. Use controls to interact.');
+  setInterval(gameLoop, 100);
+});
+</script>
+</body>
+</html>
